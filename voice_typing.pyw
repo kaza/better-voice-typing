@@ -2,9 +2,13 @@ import os
 import sys
 import threading
 import traceback
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
+import logging
+from datetime import datetime
+from pathlib import Path
 
 from pynput import keyboard
+import pyperclip
 
 from modules.clean_text import clean_transcription
 from modules.history import TranscriptionHistory
@@ -16,8 +20,38 @@ from modules.ui import UIFeedback
 from modules.audio_manager import set_input_device, get_default_device_id, DeviceIdentifier, find_device_by_identifier
 from modules.status_manager import StatusManager, AppStatus
 
+def setup_logging() -> logging.Logger:
+    """Configure application logging"""
+    # Create logs directory in user's documents folder
+    log_dir = Path.home() / "Documents" / "VoiceTyping" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create log file with timestamp
+    log_file = log_dir / f"voice_typing_{datetime.now().strftime('%Y%m%d')}.log"
+
+    # Configure logging
+    logger = logging.getLogger('voice_typing')
+    logger.setLevel(logging.INFO)
+
+    # File handler
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Log system info at startup
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Platform: {sys.platform}")
+
+    return logger
+
 class VoiceTypingApp:
     def __init__(self) -> None:
+        # Setup logging first
+        self.logger = setup_logging()
+        self.logger.info("Starting Voice Typing application")
+
         # Hide console in Windows if running as .pyw
         if os.name == 'nt':
             import ctypes
@@ -54,6 +88,10 @@ class VoiceTypingApp:
 
         # Set initial status
         self.status_manager.set_status(AppStatus.IDLE)
+
+        # Store last recording for retry functionality
+        self.last_recording: Optional[str] = None
+        self.ui_feedback.set_retry_callback(self.retry_transcription)
 
         def win32_event_filter(msg: int, data: Any) -> bool:
             # Key codes and messages
@@ -92,23 +130,29 @@ class VoiceTypingApp:
 
     def _initialize_microphone(self) -> None:
         """Initialize microphone device from settings or default"""
-        saved_identifier = self.settings.get('selected_microphone')
-        if saved_identifier is not None:
-            try:
-                # Convert dictionary back to DeviceIdentifier
-                identifier = DeviceIdentifier(**saved_identifier)
-                device = find_device_by_identifier(identifier)
-                if device:
-                    set_input_device(device['id'])
-                else:
-                    # Fallback to default if saved device not found
+        try:
+            saved_identifier = self.settings.get('selected_microphone')
+            if saved_identifier is not None:
+                try:
+                    # Convert dictionary back to DeviceIdentifier
+                    identifier = DeviceIdentifier(**saved_identifier)
+                    device = find_device_by_identifier(identifier)
+                    if device:
+                        set_input_device(device['id'])
+                    else:
+                        # Fallback to default if saved device not found
+                        self.settings.set('selected_microphone', None)
+                        set_input_device(get_default_device_id())
+                except Exception as e:
+                    print(f"Error setting saved microphone: {e}")
+                    # Fallback to default
                     self.settings.set('selected_microphone', None)
                     set_input_device(get_default_device_id())
-            except Exception as e:
-                print(f"Error setting saved microphone: {e}")
-                # Fallback to default
-                self.settings.set('selected_microphone', None)
-                set_input_device(get_default_device_id())
+        except Exception as e:
+            self.logger.error(f"Error setting saved microphone: {e}", exc_info=True)
+            # Fallback to default
+            self.settings.set('selected_microphone', None)
+            set_input_device(get_default_device_id())
 
     def set_microphone(self, device_id: int) -> None:
         """Change the active microphone device"""
@@ -119,7 +163,8 @@ class VoiceTypingApp:
             if self.recording:
                 self.cancel_recording()
         except Exception as e:
-            print(f"Error setting microphone: {e}")
+            self.logger.error(f"Error setting microphone: {e}", exc_info=True)
+            self.logger.debug(f"Failed device_id: {device_id}")
             self.ui_feedback.show_warning("⚠️ Error changing microphone")
 
     def refresh_microphones(self) -> None:
@@ -140,38 +185,79 @@ class VoiceTypingApp:
 
     def process_audio(self) -> None:
         try:
-            # Run transcription in a separate thread to prevent UI blocking
             threading.Thread(target=self._process_audio_thread).start()
         except Exception as e:
-            print(f"Error starting process_audio thread: {str(e)}")
+            self.logger.error("Failed to start processing thread", exc_info=True)
+            self.logger.debug(f"Thread state: {threading.current_thread().name}")
             self.ui_feedback.insert_text(f"Error: {str(e)[:50]}...")
 
     def _process_audio_thread(self) -> None:
         try:
+            self.logger.info("Starting audio processing")
             print("Analyzing audio...")
             is_valid, reason = self.recorder.analyze_recording()
 
             if not is_valid:
-                print(f"Skipping transcription: {reason}")
+                self.logger.warning(f"Skipping transcription: {reason}")
                 self.status_manager.set_status(
                     AppStatus.ERROR,
                     "⛔ Skipped: " + ("too short" if "short" in reason.lower() else "mostly silence")
                 )
                 return
 
-            print("✍️ Starting transcription...")
-            text = transcribe_audio(self.recorder.filename)
+            self.logger.info("Starting transcription")
+            # Store recording path for retry functionality
+            self.last_recording = self.recorder.filename
+
+            success, result = self._attempt_transcription()
+            if not success:
+                self.ui_feedback.show_error_with_retry("⚠️ Transcription failed")
+                self.status_manager.set_status(AppStatus.ERROR, "⚠️ Error processing audio")
+            else:
+                self.last_recording = None  # Clear on success
+                self.history.add(result)
+                self.ui_feedback.insert_text(result)
+                self.update_icon_menu()
+                self.status_manager.set_status(AppStatus.IDLE)
+                print("Transcription completed and inserted")
+
+        except Exception as e:
+            self.logger.error("Error in _process_audio_thread:", exc_info=True)
+            self.ui_feedback.show_error_with_retry("⚠️ Transcription failed")
+            self.status_manager.set_status(AppStatus.ERROR, "⚠️ Error processing audio")
+
+    def _attempt_transcription(self) -> Tuple[bool, Optional[str]]:
+        """Attempt transcription and return (success, result)"""
+        try:
+            text = transcribe_audio(self.last_recording)
             if self.clean_transcription_enabled:
                 text = clean_transcription(text)
-            self.history.add(text)
-            self.ui_feedback.insert_text(text)
-            self.update_icon_menu()
-            self.status_manager.set_status(AppStatus.IDLE)
-            print("Transcription completed and inserted")
+            self.logger.info("Transcription completed successfully")
+            return True, text
         except Exception as e:
-            print("Error in _process_audio_thread:")
-            traceback.print_exc()
-            self.status_manager.set_status(AppStatus.ERROR, "⚠️ Error processing audio")
+            self.logger.error(f"Transcription error: {e}", exc_info=True)
+            return False, None
+
+    def retry_transcription(self) -> None:
+        """Retry transcription of last failed recording"""
+        if not self.last_recording:
+            return
+
+        def retry_thread():
+            self.status_manager.set_status(AppStatus.PROCESSING)
+            success, result = self._attempt_transcription()
+
+            if success:
+                self.last_recording = None
+                self.history.add(result)
+                pyperclip.copy(result)  # Copy to clipboard instead of direct insertion
+                self.status_manager.set_status(AppStatus.IDLE)
+                self.ui_feedback.show_warning("✅ Transcription copied to clipboard", 3000)
+            else:
+                self.ui_feedback.show_error_with_retry("⚠️ Retry failed")
+                self.status_manager.set_status(AppStatus.ERROR)
+
+        threading.Thread(target=retry_thread).start()
 
     def toggle_clean_transcription(self) -> None:
         self.clean_transcription_enabled = not self.clean_transcription_enabled
@@ -191,6 +277,7 @@ class VoiceTypingApp:
 
     def cleanup(self) -> None:
         """Ensure proper cleanup of all resources"""
+        self.logger.info("Cleaning up application resources")
         self.listener.stop()
         if self.recording:
             self.recorder.stop()
@@ -209,8 +296,8 @@ class VoiceTypingApp:
         try:
             self.recorder.stop()
         except Exception as e:
-            print(f"Error stopping recorder: {e}")
-            traceback.print_exc()
+            self.logger.error("Error stopping recorder", exc_info=True)
+            self.logger.debug(f"Recorder state: recording={self.recording}")
 
     def toggle_favorite_microphone(self, device_id: int) -> None:
         """Toggle favorite status for a microphone device"""

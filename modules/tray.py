@@ -131,6 +131,11 @@ def setup_tray_icon(app):
 
         return pystray.Menu(
             pystray.MenuItem(
+                '🔄 Retry Last Transcription',
+                lambda icon, item: app.retry_transcription(),
+                enabled=lambda item: app.last_recording is not None
+            ),
+            pystray.MenuItem(
                 'Recent Transcriptions',
                 pystray.Menu(*copy_menu) if copy_menu else pystray.Menu(
                     pystray.MenuItem('No transcriptions yet', None, enabled=False)

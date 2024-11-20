@@ -1,6 +1,6 @@
 import threading
 import tkinter as tk
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Tuple
 
 from pynput import keyboard
 import pyautogui
@@ -48,6 +48,10 @@ class UIFeedback:
 
         # Add click callback placeholder
         self.on_click_callback = None
+
+        # Add retry callback placeholder
+        self.on_retry_callback: Optional[Callable[[], None]] = None
+        self.retry_available = False
 
         # Bind click events
         self.label.bind('<Button-1>', self._handle_click)
@@ -113,12 +117,19 @@ class UIFeedback:
         self.level_canvas.coords(self.level_bar, 0, 0, 0, 4)
 
     def _handle_click(self, event: tk.Event) -> None:
-        if self.on_click_callback:
+        if self.retry_available and self.on_retry_callback:
+            self.retry_available = False
+            self.on_retry_callback()
+        elif self.on_click_callback:
             self.on_click_callback()
 
     def set_click_callback(self, callback: Callable[[], None]) -> None:
         """Set the function to be called when the indicator is clicked"""
         self.on_click_callback = callback
+
+    def set_retry_callback(self, callback: Callable[[], None]) -> None:
+        """Set the function to be called when retry is clicked"""
+        self.on_retry_callback = callback
 
     def insert_text(self, text: str) -> None:
         """Insert text at the current cursor position using clipboard while preserving original clipboard content"""
@@ -161,9 +172,37 @@ class UIFeedback:
             self._reset_and_hide
         )
 
+    def show_error_with_retry(self, message: str, duration_ms: int = 7000) -> None:
+        """Show error message with retry option"""
+        # Cancel any existing warning timer
+        if self.warning_timer:
+            self.indicator.after_cancel(self.warning_timer)
+
+        self.retry_available = True
+
+        # Update appearance for error state
+        self.indicator.deiconify()
+        self.indicator.configure(bg=self.warning_color)
+        self.frame.configure(bg=self.warning_color)
+        self.label.configure(
+            bg=self.warning_color,
+            fg='black',
+            text=f"{message}\n🔄 Click to retry"
+        )
+
+        # Hide the level indicator during warning
+        self.level_canvas.pack_forget()
+
+        # Schedule auto-dismiss
+        self.warning_timer = self.indicator.after(
+            duration_ms,
+            self._reset_and_hide
+        )
+
     def _reset_and_hide(self) -> None:
         """Reset UI state and hide the indicator"""
         self.warning_timer = None
+        self.retry_available = False
         self.level_canvas.pack(fill='x', padx=4, pady=(0, 4))  # Restore level indicator
         self.indicator.withdraw()
         # Reset to recording state colors
