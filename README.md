@@ -88,7 +88,7 @@ To update to the latest version:
 ## TODO
 - [x] Do not send audio to OpenAI if the audio is silent or too short (<2 seconds)
 - [ ] Add visual status indicators via taskbar icon or use the recording overlay to show transcription state (recording/processing/done/error)
-- [ ] Add microphone selection via system tray menu (currently locked to system default)
+- [x] Add microphone selection via system tray menu (currently locked to system default)
 - [ ] Manual (auto?) retry option for failed transcriptions via tray menu or using overlay (especially important for longer recordings)
 - [ ] Customizable activation shortcuts for recording control
 - [ ] Improved transcription accuracy for code variables, proper nouns and abbreviations using screenshot context and cursor position via VLM

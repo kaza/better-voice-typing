@@ -1,5 +1,22 @@
 {
     "continuous_capture": true,
     "smart_capture": false,
-    "clean_transcription": false
+    "clean_transcription": false,
+    "selected_microphone": {
+        "name": "Voicemeeter Out B1 (VB-Audio Vo",
+        "channels": 2,
+        "default_samplerate": 44100.0
+    },
+    "favorite_microphones": [
+        {
+            "name": "Headset (MOMENTUM 4)",
+            "channels": 2,
+            "default_samplerate": 44100.0
+        },
+        {
+            "name": "Voicemeeter Out B1 (VB-Audio Vo",
+            "channels": 2,
+            "default_samplerate": 44100.0
+        }
+    ]
 }

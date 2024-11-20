@@ -13,6 +13,7 @@ from modules.settings import Settings
 from modules.transcribe import transcribe_audio
 from modules.tray import setup_tray_icon
 from modules.ui import UIFeedback
+from modules.audio_manager import set_input_device, get_default_device_id, DeviceIdentifier, find_device_by_identifier
 
 class VoiceTypingApp:
     def __init__(self) -> None:
@@ -30,6 +31,9 @@ class VoiceTypingApp:
         self.ctrl_pressed = False
         self.clean_transcription_enabled = self.settings.get('clean_transcription')
         self.history = TranscriptionHistory()
+
+        # Initialize microphone
+        self._initialize_microphone()
 
         def win32_event_filter(msg: int, data: Any) -> bool:
             # Key codes and messages
@@ -65,6 +69,42 @@ class VoiceTypingApp:
             win32_event_filter=win32_event_filter,
             suppress=False
         )
+
+    def _initialize_microphone(self) -> None:
+        """Initialize microphone device from settings or default"""
+        saved_identifier = self.settings.get('selected_microphone')
+        if saved_identifier is not None:
+            try:
+                # Convert dictionary back to DeviceIdentifier
+                identifier = DeviceIdentifier(**saved_identifier)
+                device = find_device_by_identifier(identifier)
+                if device:
+                    set_input_device(device['id'])
+                else:
+                    # Fallback to default if saved device not found
+                    self.settings.set('selected_microphone', None)
+                    set_input_device(get_default_device_id())
+            except Exception as e:
+                print(f"Error setting saved microphone: {e}")
+                # Fallback to default
+                self.settings.set('selected_microphone', None)
+                set_input_device(get_default_device_id())
+
+    def set_microphone(self, device_id: int) -> None:
+        """Change the active microphone device"""
+        try:
+            set_input_device(device_id)
+            self.settings.set('selected_microphone', device_id)
+            # Stop any ongoing recording when changing microphone
+            if self.recording:
+                self.cancel_recording()
+        except Exception as e:
+            print(f"Error setting microphone: {e}")
+            self.ui_feedback.show_warning("⚠️ Error changing microphone")
+
+    def refresh_microphones(self) -> None:
+        """Refresh the microphone list and update the tray menu"""
+        self.update_icon_menu()
 
     def toggle_recording(self) -> None:
         if not self.recording:
@@ -152,6 +192,15 @@ class VoiceTypingApp:
         except Exception as e:
             print(f"Error stopping recorder: {e}")
             traceback.print_exc()
+
+    def toggle_favorite_microphone(self, device_id: int) -> None:
+        """Toggle favorite status for a microphone device"""
+        favorites = self.settings.get('favorite_microphones')
+        if device_id in favorites:
+            favorites.remove(device_id)
+        else:
+            favorites.append(device_id)
+        self.settings.set('favorite_microphones', favorites)
 
 if __name__ == "__main__":
     app = VoiceTypingApp()

@@ -1,9 +1,12 @@
 import os
 import threading
+from typing import Any, Dict
 
 import pyperclip
 import pystray
 from PIL import Image
+
+from modules.audio_manager import get_input_devices, get_default_device_id, set_input_device, create_device_identifier
 
 def create_image():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +31,78 @@ def create_copy_menu(app):
         for text in app.history.get_recent()
     ]
 
+def create_microphone_menu(app):
+    """Creates dynamic menu of available microphones"""
+    devices = get_input_devices()
+    current_identifier = app.settings.get('selected_microphone')
+    favorite_identifiers = app.settings.get('favorite_microphones')
+    default_device_id = get_default_device_id()
+
+    def make_mic_handler(device: Dict[str, any]):
+        def handler(icon, item):
+            identifier = create_device_identifier(device)._asdict()
+            app.settings.set('selected_microphone', identifier)
+            set_input_device(device['id'])
+        return handler
+
+    def make_favorite_handler(device: Dict[str, any]):
+        def handler(icon, item):
+            identifier = create_device_identifier(device)._asdict()
+            favorites = app.settings.get('favorite_microphones')
+
+            if identifier in favorites:
+                favorites.remove(identifier)
+            else:
+                favorites.append(identifier)
+
+            app.settings.set('favorite_microphones', favorites)
+            app.update_icon_menu()
+        return handler
+
+    # Create menu items
+    select_items = []
+    favorite_items = []
+
+    for device in devices:
+        identifier = create_device_identifier(device)._asdict()
+        is_favorite = identifier in favorite_identifiers
+        is_selected = identifier == current_identifier
+        is_default = device['id'] == default_device_id
+
+        star_prefix = "💫 " if is_favorite else "    "
+        default_prefix = "🎙️ " if is_default else "    "
+        combined_prefix = default_prefix if is_default else star_prefix
+
+        select_items.append(
+            pystray.MenuItem(
+                f"{combined_prefix}{device['name']}",
+                make_mic_handler(device),
+                checked=lambda item, dev=device: create_device_identifier(dev)._asdict() == current_identifier
+            )
+        )
+
+        favorite_items.append(
+            pystray.MenuItem(
+                f"{default_prefix}{device['name']}",
+                make_favorite_handler(device),
+                checked=lambda item, dev=device: create_device_identifier(dev)._asdict() in favorite_identifiers
+            )
+        )
+
+    menu_items = [
+        pystray.MenuItem(
+            'Select Device',
+            pystray.Menu(*select_items)
+        ),
+        pystray.MenuItem(
+            'Manage Favorites',
+            pystray.Menu(*favorite_items)
+        ),
+        pystray.MenuItem('Refresh Devices', lambda icon, item: app.refresh_microphones())
+    ]
+
+    return menu_items
+
 def setup_tray_icon(app):
     icon = pystray.Icon('Voice Typing')
     icon.icon = create_image()
@@ -35,6 +110,8 @@ def setup_tray_icon(app):
     def get_menu():
         # Dynamic menu that updates when called
         copy_menu = create_copy_menu(app)
+        microphone_menu = create_microphone_menu(app)
+
         return pystray.Menu(
             pystray.MenuItem(
                 'Recent Transcriptions',
@@ -42,6 +119,10 @@ def setup_tray_icon(app):
                     pystray.MenuItem('No transcriptions yet', None, enabled=False)
                 ),
                 enabled=bool(copy_menu)
+            ),
+            pystray.MenuItem(
+                'Microphone',
+                pystray.Menu(*microphone_menu)
             ),
             pystray.MenuItem(
                 'Settings',

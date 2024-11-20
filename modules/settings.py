@@ -5,12 +5,41 @@ from typing import Any, Dict
 class Settings:
     def __init__(self) -> None:
         self.settings_file: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
-        self.default_settings: Dict[str, bool] = {
+        self.default_settings: Dict[str, Any] = {
             'continuous_capture': True,
             'smart_capture': False,
-            'clean_transcription': True
+            'clean_transcription': True,
+            'selected_microphone': None,
+            'favorite_microphones': []
         }
         self.current_settings: Dict[str, Any] = self.load_settings()
+        self._migrate_device_settings()
+
+    def _migrate_device_settings(self) -> None:
+        """Migrates old device ID settings to new identifier format"""
+        from modules.audio_manager import get_device_by_id, create_device_identifier
+
+        # Migrate selected microphone
+        if isinstance(self.current_settings.get('selected_microphone'), int):
+            device = get_device_by_id(self.current_settings['selected_microphone'])
+            if device:
+                identifier = create_device_identifier(device)
+                self.current_settings['selected_microphone'] = identifier._asdict()
+            else:
+                self.current_settings['selected_microphone'] = None
+
+        # Migrate favorite microphones
+        if self.current_settings.get('favorite_microphones'):
+            new_favorites = []
+            for device_id in self.current_settings['favorite_microphones']:
+                if isinstance(device_id, int):
+                    device = get_device_by_id(device_id)
+                    if device:
+                        identifier = create_device_identifier(device)
+                        new_favorites.append(identifier._asdict())
+            self.current_settings['favorite_microphones'] = new_favorites
+
+        self.save_settings()
 
     def load_settings(self) -> Dict[str, Any]:
         try:

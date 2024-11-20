@@ -17,7 +17,7 @@ import soundfile as sf
 # (-30 dB = 0.0316, -40 dB = 0.01, -50 dB = 0.003)
 SILENCE_THRESHOLD = 0.01
 # Minimum duration in seconds for valid recordings
-MIN_DURATION = 2.0
+MIN_DURATION = 1.5
 
 class AudioRecorder:
     # Controls how smooth/reactive the audio level indicator bar appears in the UI
