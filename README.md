@@ -42,13 +42,39 @@ The app works as follows:
 - Maximum recording duration of ~10 minutes per transcription due to OpenAI Whisper API's 25MB file size limit
 - Currently uses system default microphone with no in-app selection option
 
-## Setup/Installation
+## Setup/Installation - For Users
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/Elevate-Code/better-voice-typing
-   cd better-voice-typing
-   ```
+### Quick Start (Windows)
+1. Make sure you have Python 3.8 or newer installed from [python.org](https://python.org)
+2. Download this project by clicking the green "Code" button above → "Download ZIP"
+3. Extract the ZIP file to a location of your choice
+4. Double-click the `setup.bat` file to automatically:
+   - Create a virtual environment
+   - Install required packages
+   - Set up your configuration file
+5. When prompted, paste your OpenAI API key ([get one here](https://platform.openai.com/api-keys))
+6. Double-click `voice_typing.pyw` to start the app
+7. (Optional) Right-click `voice_typing.pyw` → Send to → Desktop to create a shortcut
+
+### Auto-start with Windows
+To make the app start automatically when Windows boots:
+1. Press `Win + R` on your keyboard
+2. Type `shell:startup` and press Enter
+3. Drag your `voice_typing.pyw` shortcut into this folder
+
+### Updating the App
+To update to the latest version:
+1. Double-click `setup.bat`
+2. Choose 'Y' when asked to check for updates
+3. The tool will automatically:
+   - Download the latest version
+   - Preserve your settings and API keys
+   - Update all dependencies
+4. Restart the app if it was running
+
+## Setup/Installation - For Developers
+
+1. Clone the repo
 2. Create a virtual environment using `python -m venv venv`
 3. Run `venv\Scripts\activate` to activate the virtual environment
 4. Run `pip install -r requirements.txt` to install all dependencies
@@ -60,11 +86,13 @@ The app works as follows:
 7. Run the app by double-clicking `voice_typing.pyw`, and add a shortcut to your startup folder to launch automatically on system boot
 
 ## TODO
+- [x] Do not send audio to OpenAI if the audio is silent or too short (<2 seconds)
+- [ ] Add visual status indicators via taskbar icon or use the recording overlay to show transcription state (recording/processing/done/error)
+- [ ] Add microphone selection via system tray menu (currently locked to system default)
+- [ ] Manual (auto?) retry option for failed transcriptions via tray menu or using overlay (especially important for longer recordings)
 - [ ] Customizable activation shortcuts for recording control
 - [ ] Improved transcription accuracy for code variables, proper nouns and abbreviations using screenshot context and cursor position via VLM
-- [ ] Manual retry option for failed transcriptions via tray menu (especially important for longer recordings)
 - [ ] Smart Capture: Record audio in 1-2 minute chunks with silence detection, process chunks with Whisper in background, then combine and clean results with an LLM
-- [ ] Add microphone selection via system tray menu (currently locked to system default)
 
 ## Contributing
 

@@ -1,5 +1,5 @@
 import threading
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
 
 import numpy as np
 import sounddevice as sd
@@ -11,6 +11,13 @@ import soundfile as sf
 # - Mono channel as stereo provides no benefit
 # - WAV format ensures compatibility and quality
 # NOTE: Ends up being ~2.6 megabytes for every 60 seconds with these settings.
+
+# CONSTANTS: Audio analysis thresholds
+# RMS threshold below which audio is considered silence
+# (-30 dB = 0.0316, -40 dB = 0.01, -50 dB = 0.003)
+SILENCE_THRESHOLD = 0.01
+# Minimum duration in seconds for valid recordings
+MIN_DURATION = 2.0
 
 class AudioRecorder:
     # Controls how smooth/reactive the audio level indicator bar appears in the UI
@@ -27,6 +34,7 @@ class AudioRecorder:
         self.stream: Optional[sd.InputStream] = None
         self.file: Optional[sf.SoundFile] = None
         self._lock: threading.Lock = threading.Lock()
+        self.audio_data: list[np.ndarray] = []  # Store audio chunks for analysis
 
     def _calculate_level(self, indata: np.ndarray) -> float:
         """Calculate audio level from input data"""
@@ -41,6 +49,34 @@ class AudioRecorder:
         # Apply smoothing
         self.smoothed_level = (self.SMOOTHING_FACTOR * current_level) + ((1 - self.SMOOTHING_FACTOR) * self.smoothed_level)
         return self.smoothed_level
+
+    def analyze_recording(self) -> Tuple[bool, str]:
+        """Analyze the recorded audio file for silence and duration.
+
+        Returns:
+            Tuple[bool, str]: (is_valid, reason_if_invalid)
+        """
+        try:
+            with sf.SoundFile(self.filename) as audio_file:
+                # Check duration
+                duration = len(audio_file) / audio_file.samplerate
+                if duration < MIN_DURATION:
+                    return False, f"Recording too short ({duration:.1f}s < {MIN_DURATION}s)"
+
+                # Read the entire file
+                audio_data = audio_file.read()
+
+                # Calculate RMS value
+                rms = np.sqrt(np.mean(np.square(audio_data)))
+
+                # Check if mostly silence
+                if rms < SILENCE_THRESHOLD:
+                    return False, "Recording contains mostly silence"
+
+                return True, ""
+
+        except Exception as e:
+            return False, f"Error analyzing audio: {str(e)}"
 
     def _record(self) -> None:
         def audio_callback(indata: np.ndarray,

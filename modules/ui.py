@@ -40,7 +40,8 @@ class UIFeedback:
 
         # Add pulsing state variables
         self.pulsing = False
-        self.pulse_colors = ['red', 'darkred']
+        self.RECORDING_COLORS = ['red', 'darkred']
+        self.pulse_colors = self.RECORDING_COLORS
         self.current_color = 0
 
         # Add click callback placeholder
@@ -54,6 +55,13 @@ class UIFeedback:
         # Position window in top-right corner
         screen_width = self.root.winfo_screenwidth()
         self.indicator.geometry(f'+{screen_width-150}+10')
+
+        # Add warning state variables
+        self.warning_color = '#FFA500'  # Orange warning color
+        self.warning_timer: Optional[str] = None
+
+        # Update label text color to be more visible on warning background
+        self.label.configure(fg='black')  # Will be dynamically changed based on state
 
     def update_audio_level(self, level: float) -> None:
         """Update the audio level indicator (level should be between 0.0 and 1.0)"""
@@ -72,18 +80,33 @@ class UIFeedback:
             self.indicator.after(500, self._pulse)  # Pulse every 500ms
 
     def start_listening_animation(self) -> None:
+        """Start the recording animation"""
+        # Cancel any existing warning state
+        if self.warning_timer:
+            self.indicator.after_cancel(self.warning_timer)
+            self.warning_timer = None
+
+        self.pulse_colors = self.RECORDING_COLORS
+        self.label.configure(
+            text="🎤 Recording (click to cancel)",
+            fg='white'
+        )
+        self.level_canvas.pack(fill='x', padx=4, pady=(0, 4))
         self.indicator.deiconify()
         self.pulsing = True
         self._pulse()
 
     def stop_listening_animation(self) -> None:
+        """Stop the recording animation"""
         self.pulsing = False
-        self.indicator.withdraw()
-        # Reset colors
+        # Only hide if no warning is active
+        if not self.warning_timer:
+            self.indicator.withdraw()
+        # Reset colors to recording state
         self.current_color = 0
-        self.indicator.configure(bg=self.pulse_colors[0])
-        self.frame.configure(bg=self.pulse_colors[0])
-        self.label.configure(bg=self.pulse_colors[0])
+        self.indicator.configure(bg=self.RECORDING_COLORS[0])
+        self.frame.configure(bg=self.RECORDING_COLORS[0])
+        self.label.configure(bg=self.RECORDING_COLORS[0])
         # Reset audio level
         self.level_canvas.coords(self.level_bar, 0, 0, 0, 4)
 
@@ -110,6 +133,44 @@ class UIFeedback:
                 self.root.after(100, lambda: pyperclip.copy(original_clipboard))
         except Exception as e:
             print(f"UIFeedback: Error during text insertion: {str(e)}")
+
+    def show_warning(self, message: str, duration_ms: int = 5000) -> None:
+        """Show a warning message in the indicator for a specified duration"""
+        # Cancel any existing warning timer
+        if self.warning_timer:
+            self.indicator.after_cancel(self.warning_timer)
+
+        # Update appearance for warning state
+        self.indicator.deiconify()
+        self.indicator.configure(bg=self.warning_color)
+        self.frame.configure(bg=self.warning_color)
+        self.label.configure(
+            bg=self.warning_color,
+            fg='black',  # Dark text for warning state
+            text=message
+        )
+
+        # Hide the level indicator during warning
+        self.level_canvas.pack_forget()
+
+        # Schedule auto-dismiss
+        self.warning_timer = self.indicator.after(
+            duration_ms,
+            self._reset_and_hide
+        )
+
+    def _reset_and_hide(self) -> None:
+        """Reset UI state and hide the indicator"""
+        self.warning_timer = None
+        self.level_canvas.pack(fill='x', padx=4, pady=(0, 4))  # Restore level indicator
+        self.indicator.withdraw()
+        # Reset to recording state colors
+        self.indicator.configure(bg=self.RECORDING_COLORS[0])
+        self.frame.configure(bg=self.RECORDING_COLORS[0])
+        self.label.configure(
+            bg=self.RECORDING_COLORS[0],
+            fg='white'  # Reset to white text for recording state
+        )
 
 
 if __name__ == "__main__":

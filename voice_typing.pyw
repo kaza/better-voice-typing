@@ -88,6 +88,16 @@ class VoiceTypingApp:
 
     def _process_audio_thread(self) -> None:
         try:
+            print("Analyzing audio...")
+            is_valid, reason = self.recorder.analyze_recording()
+
+            if not is_valid:
+                print(f"Skipping transcription: {reason}")
+                # Show warning with the specific reason
+                warning_message = "⛔ Skipped, too short" if "short" in reason.lower() else "⛔ Skipped, mostly silence"
+                self.ui_feedback.show_warning(warning_message)
+                return
+
             print("✍️ Starting transcription...")
             text = transcribe_audio(self.recorder.filename)
             if self.clean_transcription_enabled:
@@ -99,7 +109,7 @@ class VoiceTypingApp:
         except Exception as e:
             print("Error in _process_audio_thread:")
             traceback.print_exc()
-            self.ui_feedback.insert_text(f"Error: {str(e)[:50]}...")
+            self.ui_feedback.show_warning(f"⚠️ Error processing audio")
 
     def toggle_clean_transcription(self) -> None:
         self.clean_transcription_enabled = not self.clean_transcription_enabled

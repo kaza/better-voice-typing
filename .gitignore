@@ -5,6 +5,7 @@
 # === Temporary files and directories ===
 temp/
 temp_audio.*
+temp_update/
 
 
 ########################################################################
