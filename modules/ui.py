@@ -6,6 +6,8 @@ from pynput import keyboard
 import pyautogui
 import pyperclip
 
+from modules.status_manager import StatusConfig
+
 class UIFeedback:
     pyautogui_lock = threading.Lock()
 
@@ -171,6 +173,66 @@ class UIFeedback:
             bg=self.RECORDING_COLORS[0],
             fg='white'  # Reset to white text for recording state
         )
+
+    def update_status(self, config: StatusConfig, error_message: Optional[str] = None) -> None:
+        """Update UI appearance based on status configuration"""
+        # Update colors and text
+        text = error_message if error_message else config.ui_text
+
+        self.indicator.configure(bg=config.ui_color)
+        self.frame.configure(bg=config.ui_color)
+        self.label.configure(
+            bg=config.ui_color,
+            fg=config.ui_fg_color,
+            text=text
+        )
+
+        # Handle visibility and animation
+        if config.pulse:
+            self.pulse_colors = [config.ui_color, self._darken_color(config.ui_color)]
+            self.indicator.deiconify()
+            self.pulsing = True
+            self._pulse()
+        else:
+            self.pulsing = False
+            if error_message:
+                self.indicator.deiconify()
+                # Auto-hide after 5 seconds for errors
+                if self.warning_timer:
+                    self.indicator.after_cancel(self.warning_timer)
+                self.warning_timer = self.indicator.after(5000, self._reset_and_hide)
+            else:
+                self.indicator.withdraw()
+
+    def _darken_color(self, color: str) -> str:
+        """Create a darker version of the given color for pulsing effect"""
+        try:
+            # Handle invalid or empty color values
+            if not color or len(color) != 7 or not color.startswith('#'):
+                return '#000000'  # Default to black if invalid color
+
+            # Convert hex to RGB, darken, convert back to hex
+            r = int(color[1:3], 16)
+            g = int(color[3:5], 16)
+            b = int(color[5:7], 16)
+
+            factor = 0.7  # Darken by 30%
+            r = int(r * factor)
+            g = int(g * factor)
+            b = int(b * factor)
+
+            return f'#{r:02x}{g:02x}{b:02x}'
+        except ValueError:
+            print(f"Warning: Invalid color format: {color}")
+            return '#000000'  # Fallback color
+
+    def cleanup(self) -> None:
+        """Ensure proper cleanup of UI resources"""
+        if self.warning_timer:
+            self.indicator.after_cancel(self.warning_timer)
+        self.pulsing = False
+        self.indicator.withdraw()
+        self.root.quit()
 
 
 if __name__ == "__main__":

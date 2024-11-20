@@ -14,6 +14,7 @@ from modules.transcribe import transcribe_audio
 from modules.tray import setup_tray_icon
 from modules.ui import UIFeedback
 from modules.audio_manager import set_input_device, get_default_device_id, DeviceIdentifier, find_device_by_identifier
+from modules.status_manager import StatusManager, AppStatus
 
 class VoiceTypingApp:
     def __init__(self) -> None:
@@ -22,6 +23,10 @@ class VoiceTypingApp:
             import ctypes
             ctypes.windll.user32.ShowWindow(
                 ctypes.windll.kernel32.GetConsoleWindow(), 0)
+
+        # Initialize these as None first
+        self.update_tray_tooltip = None
+        self.update_icon_menu = None
 
         self.settings = Settings()
         self.ui_feedback = UIFeedback()
@@ -34,6 +39,21 @@ class VoiceTypingApp:
 
         # Initialize microphone
         self._initialize_microphone()
+
+        # Initialize status manager first
+        self.status_manager = StatusManager()
+
+        # Setup single tray icon instance
+        setup_tray_icon(self)
+
+        # Now set the callbacks
+        self.status_manager.set_callbacks(
+            ui_callback=self.ui_feedback.update_status,
+            tray_callback=self.update_tray_tooltip
+        )
+
+        # Set initial status
+        self.status_manager.set_status(AppStatus.IDLE)
 
         def win32_event_filter(msg: int, data: Any) -> bool:
             # Key codes and messages
@@ -111,11 +131,11 @@ class VoiceTypingApp:
             print("🎙️ Starting recording...")
             self.recording = True
             self.recorder.start()
-            self.ui_feedback.start_listening_animation()
+            self.status_manager.set_status(AppStatus.RECORDING)
         else:
             self.recording = False
             self.recorder.stop()
-            self.ui_feedback.stop_listening_animation()
+            self.status_manager.set_status(AppStatus.PROCESSING)
             self.process_audio()
 
     def process_audio(self) -> None:
@@ -133,9 +153,10 @@ class VoiceTypingApp:
 
             if not is_valid:
                 print(f"Skipping transcription: {reason}")
-                # Show warning with the specific reason
-                warning_message = "⛔ Skipped, too short" if "short" in reason.lower() else "⛔ Skipped, mostly silence"
-                self.ui_feedback.show_warning(warning_message)
+                self.status_manager.set_status(
+                    AppStatus.ERROR,
+                    "⛔ Skipped: " + ("too short" if "short" in reason.lower() else "mostly silence")
+                )
                 return
 
             print("✍️ Starting transcription...")
@@ -145,11 +166,12 @@ class VoiceTypingApp:
             self.history.add(text)
             self.ui_feedback.insert_text(text)
             self.update_icon_menu()
+            self.status_manager.set_status(AppStatus.IDLE)
             print("Transcription completed and inserted")
         except Exception as e:
             print("Error in _process_audio_thread:")
             traceback.print_exc()
-            self.ui_feedback.show_warning(f"⚠️ Error processing audio")
+            self.status_manager.set_status(AppStatus.ERROR, "⚠️ Error processing audio")
 
     def toggle_clean_transcription(self) -> None:
         self.clean_transcription_enabled = not self.clean_transcription_enabled
@@ -160,9 +182,6 @@ class VoiceTypingApp:
         # Start keyboard listener
         self.listener.start()
 
-        # Setup tray icon with self reference
-        setup_tray_icon(self)
-
         # Start the UI feedback's tkinter mainloop in the main thread
         try:
             self.ui_feedback.root.mainloop()
@@ -171,19 +190,19 @@ class VoiceTypingApp:
             sys.exit(0)
 
     def cleanup(self) -> None:
+        """Ensure proper cleanup of all resources"""
         self.listener.stop()
         if self.recording:
             self.recorder.stop()
-            self.ui_feedback.stop_listening_animation()
+        self.ui_feedback.cleanup()
 
     def cancel_recording(self) -> None:
         """Cancel recording without attempting transcription"""
         if self.recording:
             print("Canceling recording...")
             self.recording = False
-            # Start a separate thread for stopping the recorder
             threading.Thread(target=self._stop_recorder).start()
-            self.ui_feedback.stop_listening_animation()
+            self.status_manager.set_status(AppStatus.IDLE)
 
     def _stop_recorder(self) -> None:
         """Helper method to stop recorder in a separate thread"""

@@ -7,16 +7,5 @@
         "channels": 2,
         "default_samplerate": 44100.0
     },
-    "favorite_microphones": [
-        {
-            "name": "Headset (MOMENTUM 4)",
-            "channels": 2,
-            "default_samplerate": 44100.0
-        },
-        {
-            "name": "Voicemeeter Out B1 (VB-Audio Vo",
-            "channels": 2,
-            "default_samplerate": 44100.0
-        }
-    ]
+    "favorite_microphones": []
 }

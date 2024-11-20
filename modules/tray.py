@@ -4,13 +4,14 @@ from typing import Any, Dict
 
 import pyperclip
 import pystray
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from modules.audio_manager import get_input_devices, get_default_device_id, set_input_device, create_device_identifier
 
-def create_image():
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    icon_path = os.path.join(current_dir, 'microphone.png')
+def create_tray_icon(icon_path: str) -> Image.Image:
+    """Create tray icon from file path"""
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    icon_path = os.path.join(current_dir, icon_path)
     return Image.open(icon_path)
 
 def on_exit(icon, item):
@@ -104,8 +105,24 @@ def create_microphone_menu(app):
     return menu_items
 
 def setup_tray_icon(app):
-    icon = pystray.Icon('Voice Typing')
-    icon.icon = create_image()
+    # Create a single icon instance
+    icon = pystray.Icon(
+        'Voice Typing',
+        icon=create_tray_icon('assets/microphone-blue.png')
+    )
+
+    def update_icon(emoji_prefix: str) -> None:
+        """Update both the tray icon and tooltip"""
+        try:
+            # Update icon image from current status config
+            icon.icon = create_tray_icon(app.status_manager.current_config.tray_icon_file)
+            # Update tooltip with emoji prefix
+            icon.title = f"{emoji_prefix} Voice Typing"
+        except Exception as e:
+            print(f"Error updating tray icon: {e}")
+
+    # Store the update function in the app
+    app.update_tray_tooltip = update_icon
 
     def get_menu():
         # Dynamic menu that updates when called
