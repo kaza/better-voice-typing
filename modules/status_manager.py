@@ -14,6 +14,7 @@ class StatusConfig:
     tray_icon_file: str  # Path to icon file
     ui_color: str  # Must be valid hex color (e.g., '#FF0000')
     ui_text: str
+    tooltip_text: str  # New field for tray tooltip
     ui_fg_color: str = '#FFFFFF'  # Default to white
     pulse: bool = False
 
@@ -24,28 +25,32 @@ class StatusManager:
             tray_icon_file='assets/microphone-blue.png',
             ui_color='#333333',
             ui_text="Ready",
+            tooltip_text="Better Voice Typing",
             pulse=False
         ),
         AppStatus.RECORDING: StatusConfig(
             tray_icon="⚫",
             tray_icon_file='assets/microphone-red.png',
-            ui_color='#FF0000',  # Changed to hex format
+            ui_color='#FF0000',
             ui_text="🎤 Recording (click to cancel)",
+            tooltip_text="Recording in progress",
             pulse=True
         ),
         AppStatus.PROCESSING: StatusConfig(
             tray_icon="⚙️",
             tray_icon_file='assets/microphone-yellow.png',
-            ui_color='#0066CC',  # Changed to hex format
+            ui_color='#0066CC',
             ui_text="⚙️ Processing...",
+            tooltip_text="Processing audio...",
             pulse=True
         ),
         AppStatus.ERROR: StatusConfig(
             tray_icon="⚠️",
             tray_icon_file='assets/microphone-yellow.png',
-            ui_color='#FFA500',  # Changed to hex format
+            ui_color='#FFA500',
             ui_text="⚠️ Error",
-            ui_fg_color='#000000',  # Changed to hex format
+            tooltip_text="Error occurred",
+            ui_fg_color='#000000',
             pulse=False
         )
     }
@@ -73,9 +78,10 @@ class StatusManager:
             else:
                 self._ui_callback(config)
 
-        # Update tray
+        # Update tray with error message if present
         if self._tray_callback:
-            self._tray_callback(config.tray_icon)
+            tooltip = error_message if status == AppStatus.ERROR and error_message else config.tooltip_text
+            self._tray_callback(config.tray_icon, tooltip)
 
     @property
     def current_status(self) -> AppStatus:

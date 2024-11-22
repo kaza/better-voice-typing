@@ -12,7 +12,7 @@ import pyperclip
 
 from modules.clean_text import clean_transcription
 from modules.history import TranscriptionHistory
-from modules.recorder import AudioRecorder
+from modules.recorder import AudioRecorder, DEFAULT_SILENCE_TIMEOUT
 from modules.settings import Settings
 from modules.transcribe import transcribe_audio
 from modules.tray import setup_tray_icon
@@ -23,6 +23,7 @@ from modules.status_manager import StatusManager, AppStatus
 def setup_logging() -> logging.Logger:
     """Configure application logging"""
     # Create logs directory in user's documents folder
+    # Ex. "C:\Users\{name}\Documents\VoiceTyping\logs\voice_typing_20241120.log"
     log_dir = Path.home() / "Documents" / "VoiceTyping" / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -61,10 +62,16 @@ class VoiceTypingApp:
         # Initialize these as None first
         self.update_tray_tooltip = None
         self.update_icon_menu = None
+        # Initialize last_recording before tray setup
+        self.last_recording: Optional[str] = None
 
         self.settings = Settings()
+        silence_timeout = self.settings.get('silence_timeout')
         self.ui_feedback = UIFeedback()
-        self.recorder = AudioRecorder(level_callback=self.ui_feedback.update_audio_level)
+        self.recorder = AudioRecorder(
+            level_callback=self.ui_feedback.update_audio_level,
+            silence_timeout=silence_timeout
+        )
         self.ui_feedback.set_click_callback(self.cancel_recording)
         self.recording = False
         self.ctrl_pressed = False
@@ -90,7 +97,6 @@ class VoiceTypingApp:
         self.status_manager.set_status(AppStatus.IDLE)
 
         # Store last recording for retry functionality
-        self.last_recording: Optional[str] = None
         self.ui_feedback.set_retry_callback(self.retry_transcription)
 
         def win32_event_filter(msg: int, data: Any) -> bool:
@@ -177,11 +183,37 @@ class VoiceTypingApp:
             self.recording = True
             self.recorder.start()
             self.status_manager.set_status(AppStatus.RECORDING)
+            # Start periodic status checks
+            self._check_recorder_status()
         else:
-            self.recording = False
-            self.recorder.stop()
+            self._stop_recording()
+
+    def _stop_recording(self) -> None:
+        """Helper method to handle recording stop logic"""
+        self.recording = False
+        self.recorder.stop()
+
+        if self.recorder.was_auto_stopped():
+            self.status_manager.set_status(
+                AppStatus.ERROR,
+                "⚠️ Recording stopped: No audio detected"
+            )
+            self.logger.warning("Recording auto-stopped due to initial silence")
+            # Clear the auto-stopped flag
+            self.recorder.auto_stopped = False
+        else:
             self.status_manager.set_status(AppStatus.PROCESSING)
             self.process_audio()
+
+    # Add this method to check recorder status periodically
+    def _check_recorder_status(self) -> None:
+        """Periodically check if recorder has auto-stopped"""
+        if self.recording and self.recorder.was_auto_stopped():
+            self._stop_recording()
+
+        if self.recording:
+            # Schedule next check in 100ms
+            self.ui_feedback.root.after(100, self._check_recorder_status)
 
     def process_audio(self) -> None:
         try:
@@ -307,6 +339,20 @@ class VoiceTypingApp:
         else:
             favorites.append(device_id)
         self.settings.set('favorite_microphones', favorites)
+
+    def toggle_silence_detection(self) -> None:
+        """Toggle silence detection on/off"""
+        current_timeout = self.settings.get('silence_timeout')
+        # Toggle between None and default timeout
+        new_timeout = None if current_timeout is not None else DEFAULT_SILENCE_TIMEOUT
+        self.settings.set('silence_timeout', new_timeout)
+
+        # Update recorder's silence timeout
+        self.recorder.silence_timeout = new_timeout
+
+        status = "enabled" if new_timeout is not None else "disabled"
+        print(f"Silence detection {status}")
+        self.logger.info(f"Silence detection {status}")
 
 if __name__ == "__main__":
     app = VoiceTypingApp()

@@ -34,7 +34,7 @@ def create_copy_menu(app):
 
 def create_microphone_menu(app):
     """Creates dynamic menu of available microphones"""
-    devices = get_input_devices()
+    devices = sorted(get_input_devices(), key=lambda d: d['name'].lower())
     current_identifier = app.settings.get('selected_microphone')
     favorite_identifiers = app.settings.get('favorite_microphones')
     default_device_id = get_default_device_id()
@@ -111,13 +111,13 @@ def setup_tray_icon(app):
         icon=create_tray_icon('assets/microphone-blue.png')
     )
 
-    def update_icon(emoji_prefix: str) -> None:
+    def update_icon(emoji_prefix: str, tooltip_text: str) -> None:
         """Update both the tray icon and tooltip"""
         try:
             # Update icon image from current status config
             icon.icon = create_tray_icon(app.status_manager.current_config.tray_icon_file)
-            # Update tooltip with emoji prefix
-            icon.title = f"{emoji_prefix} Voice Typing"
+            # Update tooltip with status message
+            icon.title = f"{emoji_prefix} {tooltip_text}"
         except Exception as e:
             print(f"Error updating tray icon: {e}")
 
@@ -158,6 +158,11 @@ def setup_tray_icon(app):
                         'Clean Transcription',
                         lambda icon, item: app.toggle_clean_transcription(),
                         checked=lambda item: app.settings.get('clean_transcription')
+                    ),
+                    pystray.MenuItem(
+                        'Auto-Stop on Silence',
+                        lambda icon, item: app.toggle_silence_detection(),
+                        checked=lambda item: app.settings.get('silence_timeout') is not None
                     ),
                     pystray.MenuItem(
                         'Smart Capture',

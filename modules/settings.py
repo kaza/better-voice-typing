@@ -10,7 +10,8 @@ class Settings:
             'smart_capture': False,
             'clean_transcription': True,
             'selected_microphone': None,
-            'favorite_microphones': []
+            'favorite_microphones': [],
+            'silence_timeout': 3.0
         }
         self.current_settings: Dict[str, Any] = self.load_settings()
         self._migrate_device_settings()

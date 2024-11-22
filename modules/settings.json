@@ -7,5 +7,6 @@
         "channels": 2,
         "default_samplerate": 44100.0
     },
-    "favorite_microphones": []
+    "favorite_microphones": [],
+    "silence_timeout": 4.0
 }

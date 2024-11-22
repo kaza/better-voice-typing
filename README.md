@@ -34,9 +34,9 @@ The app works as follows:
 - Quick access to copy previous transcriptions from system tray
 
 ## Technical Details
-- Built with Python using tkinter for UI
-- OpenAI Whisper API for transcription
-- Only tested on Windows OS and >Python 3.8
+- Minimal UI built with Python tkinter
+- OpenAI Whisper API for transcription (will support other providers in the future)
+- For now, only tested on Windows OS and Python 3.8+
 
 ## Current Limitations
 - Maximum recording duration of ~10 minutes per transcription due to OpenAI Whisper API's 25MB file size limit
@@ -54,7 +54,8 @@ The app works as follows:
    - Set up your configuration file
 5. When prompted, paste your OpenAI API key ([get one here](https://platform.openai.com/api-keys))
 6. Double-click `voice_typing.pyw` to start the app
-7. (Optional) Right-click `voice_typing.pyw` → Send to → Desktop to create a shortcut
+7. **Important**: Ensure the app's tray icon is visible by right-clicking the taskbar → "Taskbar settings" → "Select which icons appear on the taskbar" → Toggle on for Voice Typing Assistant (the tray icon is the main interface for settings and status)
+8. **Recommended**: Right-click `voice_typing.pyw` → Send to → Desktop to create a shortcut
 
 ### Auto-start with Windows
 To make the app start automatically when Windows boots:
@@ -89,7 +90,9 @@ To update to the latest version:
 - [x] Do not send audio to OpenAI if the audio is silent or too short (<2 seconds)
 - [x] Add visual status indicators via UI feedback indicator/overlay AND tray icon to show state (recording/processing/done/error)
 - [x] Add microphone selection via system tray menu (currently locked to system default)
-- [ ] Manual (auto?) retry option for failed transcriptions via tray menu or using overlay (especially important for longer recordings)
+- [x] Manual (later, auto) retry option for failed transcriptions via tray menu and using overlay (especially important for longer recordings)
+- [x] Add feature to auto-stop on complete silence, like when mic settings aren't configured properly.
+- [ ] Review and validate setup and installation process
 - [ ] Customizable activation shortcuts for recording control
 - [ ] Improved transcription accuracy for code variables, proper nouns and abbreviations using screenshot context and cursor position via VLM
 - [ ] Smart Capture: Record audio in 1-2 minute chunks with silence detection, process chunks with Whisper in background, then combine and clean results with an LLM

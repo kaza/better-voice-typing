@@ -1,5 +1,6 @@
 import threading
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Tuple, Any
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -17,7 +18,9 @@ import soundfile as sf
 # (-30 dB = 0.0316, -40 dB = 0.01, -50 dB = 0.003)
 SILENCE_THRESHOLD = 0.01
 # Minimum duration in seconds for valid recordings
-MIN_DURATION = 1.5
+MIN_DURATION = 1.0
+# Time of continuous silence (in seconds) before auto-stopping
+DEFAULT_SILENCE_TIMEOUT = 4.0
 
 class AudioRecorder:
     # Controls how smooth/reactive the audio level indicator bar appears in the UI
@@ -25,7 +28,9 @@ class AudioRecorder:
     # 0.2 provides a good balance between smoothness and responsiveness
     SMOOTHING_FACTOR = 0.2
 
-    def __init__(self, filename: str = 'temp_audio.wav', level_callback: Optional[Callable[[float], None]] = None) -> None:
+    def __init__(self, filename: str = 'temp_audio.wav',
+                 level_callback: Optional[Callable[[float], None]] = None,
+                 silence_timeout: Optional[float] = None) -> None:
         self.filename = filename
         self.recording = False
         self.thread: Optional[threading.Thread] = None
@@ -35,19 +40,50 @@ class AudioRecorder:
         self.file: Optional[sf.SoundFile] = None
         self._lock: threading.Lock = threading.Lock()
         self.audio_data: list[np.ndarray] = []  # Store audio chunks for analysis
+        self.silence_start: Optional[float] = None
+        self.silence_timeout = silence_timeout
+        self.auto_stopped = False
+        self.recording_start_time: Optional[float] = None
+        self.INITIAL_CHECK_DURATION = 4.0  # Only check first n seconds for silence
+        self.initial_sound_detected = False  # Track if we've detected any sound
 
     def _calculate_level(self, indata: np.ndarray) -> float:
         """Calculate audio level from input data"""
-        # Get the RMS value from the audio data
         rms = np.sqrt(np.mean(np.square(indata)))
-        # Convert to a log scale and normalize
-        # -60 dB to 0 dB range mapped to 0.0 to 1.0
-        db = 20 * np.log10(max(1e-10, rms))  # Avoid log(0)
-        normalized = (db + 60) / 60  # Map -60..0 to 0..1
-        current_level = max(0.0, min(1.0, normalized))  # Clamp to 0..1
 
-        # Apply smoothing
-        self.smoothed_level = (self.SMOOTHING_FACTOR * current_level) + ((1 - self.SMOOTHING_FACTOR) * self.smoothed_level)
+        # Convert to dB for level display
+        db = 20 * np.log10(max(1e-10, rms))
+        normalized = (db + 60) / 60
+        current_level = max(0.0, min(1.0, normalized))
+
+        # Only check for silence during the initial period
+        if (self.silence_timeout is not None and
+            self.recording_start_time is not None):
+
+            elapsed_time = time.time() - self.recording_start_time
+
+            # Only perform silence detection during initial period and before any sound is detected
+            if elapsed_time <= self.INITIAL_CHECK_DURATION and not self.initial_sound_detected:
+                if rms < SILENCE_THRESHOLD:
+                    if self.silence_start is None:
+                        self.silence_start = time.time()
+                    elif time.time() - self.silence_start >= self.silence_timeout:
+                        print(f"Auto-stopping due to {self.silence_timeout}s of initial silence")
+                        self.auto_stopped = True
+                        self.recording = False
+                        return 0.0
+                else:
+                    # We've detected sound, stop checking for silence
+                    self.initial_sound_detected = True
+                    self.silence_start = None
+
+        # Apply smoothing for UI feedback
+        self.smoothed_level = (self.SMOOTHING_FACTOR * current_level) + \
+                              ((1 - self.SMOOTHING_FACTOR) * self.smoothed_level)
+
+        if self.level_callback:
+            self.level_callback(self.smoothed_level)
+
         return self.smoothed_level
 
     def analyze_recording(self) -> Tuple[bool, str]:
@@ -79,10 +115,14 @@ class AudioRecorder:
             return False, f"Error analyzing audio: {str(e)}"
 
     def _record(self) -> None:
+        """Record audio in a separate thread"""
         def audio_callback(indata: np.ndarray,
                          frames: int,
-                         time: float,
+                         time_info: Any,
                          status: int) -> None:
+            if status:
+                print(f'Audio callback status: {status}')
+
             with self._lock:
                 if not self.recording or self.file is None:
                     return
@@ -90,29 +130,56 @@ class AudioRecorder:
                 if self.level_callback:
                     level = self._calculate_level(indata)
                     self.level_callback(level)
-                try:
-                    self.file.write(indata.copy())
-                except Exception as e:
-                    print(f"Audio callback error: {e}")
+
+                    # If auto-stopped, stop the stream
+                    if self.auto_stopped:
+                        self.recording = False
+                        raise sd.CallbackStop()
+
+                # Only write audio data if not auto-stopped
+                if not self.auto_stopped and self.file is not None:
+                    try:
+                        self.file.write(indata.copy())
+                    except Exception as e:
+                        print(f"Audio callback error: {e}")
+                        self.recording = False
+                        raise sd.CallbackStop()
 
         try:
-            self.file = sf.SoundFile(self.filename, mode='w', samplerate=22050,
-                                   channels=1, subtype='PCM_16', format='WAV')
-            self.stream = sd.InputStream(samplerate=22050, channels=1,
-                                       callback=audio_callback)
-            with self.file, self.stream:
-                while self.recording:
-                    sd.sleep(100)
+            with sf.SoundFile(self.filename, mode='w',
+                            samplerate=22050,
+                            channels=1,
+                            subtype='PCM_16',
+                            format='WAV') as self.file:
+                with sd.InputStream(samplerate=22050,
+                                  channels=1,
+                                  callback=audio_callback) as self.stream:
+                    while self.recording:
+                        sd.sleep(100)
+        except Exception as e:
+            print(f"Recording error: {e}")
+            self.auto_stopped = True
         finally:
             with self._lock:
                 if self.stream is not None:
-                    self.stream.close()
+                    try:
+                        self.stream.close()
+                    except:
+                        pass
                     self.stream = None
                 if self.file is not None:
-                    self.file.close()
+                    try:
+                        self.file.close()
+                    except:
+                        pass
                     self.file = None
 
     def start(self) -> None:
+        """Start recording and reset silence detection"""
+        self.auto_stopped = False
+        self.silence_start = None
+        self.initial_sound_detected = False
+        self.recording_start_time = time.time()
         self.recording = True
         self.thread = threading.Thread(target=self._record)
         self.thread.start()
@@ -141,3 +208,7 @@ class AudioRecorder:
                         except:
                             pass
                         self.file = None
+
+    def was_auto_stopped(self) -> bool:
+        """Check if recording was automatically stopped due to silence"""
+        return self.auto_stopped
