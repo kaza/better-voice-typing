@@ -92,6 +92,7 @@ To update to the latest version:
 - [x] Add microphone selection via system tray menu (currently locked to system default)
 - [x] Manual (later, auto) retry option for failed transcriptions via tray menu and using overlay (especially important for longer recordings)
 - [x] Add feature to auto-stop on complete silence, like when mic settings aren't configured properly.
+- [ ] Fix bug where the caps lock activation gets inverted where recording only starts on when caps lock is enabled. So need to record with caps lock enabled setting. While CTRL and CAPS still functions to toggle the caps lock.
 - [ ] Review and validate setup and installation process
 - [ ] Customizable activation shortcuts for recording control
 - [ ] Improved transcription accuracy for code variables, proper nouns and abbreviations using screenshot context and cursor position via VLM
