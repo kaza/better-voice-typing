@@ -60,7 +60,7 @@ class VoiceTypingApp:
         self.logger.info("Starting Voice Typing application")
 
         # Hide console in Windows if running as .pyw
-        if os.name == 'nt':
+        if os.name == 'xx-nt':
            import ctypes
            ctypes.windll.user32.ShowWindow(
                ctypes.windll.kernel32.GetConsoleWindow(), 0)
@@ -198,6 +198,7 @@ class VoiceTypingApp:
         """Helper method to handle recording stop logic"""
         self.recording = False
         self.recorder.stop()
+        self.logger.info("Recording stopped via CAPSLOCK")
 
         if self.recorder.was_auto_stopped():
             self.status_manager.set_status(
@@ -243,11 +244,13 @@ class VoiceTypingApp:
                 )
                 return
 
-            self.logger.info("Starting transcription")
             # Store recording path for retry functionality
             self.last_recording = self.recorder.filename
-            
+
+            # Move the log message here, just before actual transcription
+            self.logger.info("Starting transcription")
             success, result = self._attempt_transcription()
+            self.logger.info("Finished  transcription call ")
             if not success:
                 self.ui_feedback.show_error_with_retry("⚠️ Transcription failed")
                 self.status_manager.set_status(AppStatus.ERROR, "⚠️ Error processing audio")
