@@ -60,7 +60,7 @@ class UIFeedback:
 
         # Position window in top-right corner
         screen_width = self.root.winfo_screenwidth()
-        self.indicator.geometry(f'+{screen_width-150}+10')
+        self.indicator.geometry(f'+{screen_width-300}+10')
 
         # Add warning state variables
         self.warning_color = '#FFA500'  # Orange warning color

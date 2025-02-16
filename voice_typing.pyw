@@ -41,6 +41,12 @@ def setup_logging() -> logging.Logger:
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
+    # Add console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
     # Log system info at startup
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Platform: {sys.platform}")
@@ -55,9 +61,9 @@ class VoiceTypingApp:
 
         # Hide console in Windows if running as .pyw
         if os.name == 'nt':
-            import ctypes
-            ctypes.windll.user32.ShowWindow(
-                ctypes.windll.kernel32.GetConsoleWindow(), 0)
+           import ctypes
+           ctypes.windll.user32.ShowWindow(
+               ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
         # Initialize these as None first
         self.update_tray_tooltip = None
@@ -240,7 +246,7 @@ class VoiceTypingApp:
             self.logger.info("Starting transcription")
             # Store recording path for retry functionality
             self.last_recording = self.recorder.filename
-
+            
             success, result = self._attempt_transcription()
             if not success:
                 self.ui_feedback.show_error_with_retry("⚠️ Transcription failed")
